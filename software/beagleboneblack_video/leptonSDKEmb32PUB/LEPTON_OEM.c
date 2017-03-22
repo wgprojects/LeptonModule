@@ -64,6 +64,7 @@
 /******************************************************************************/
 #include "LEPTON_SDK.h"
 #include "LEPTON_OEM.h"
+#include "LEPTON_I2C_Reg.h"
 
 /******************************************************************************/
 /** LOCAL DEFINES                                                            **/
@@ -106,7 +107,7 @@ LEP_RESULT LEP_RunOemPowerOn( LEP_CAMERA_PORT_DESC_T_PTR portDescPtr )
 {
    LEP_RESULT result = LEP_OK;
 
-   result = LEP_DirectWriteRegister( portDescPtr, 0x0, 0x0 );
+   result = LEP_DirectWriteRegister( portDescPtr, LEP_I2C_POWER_REG, 0x0 );
 
    return( result );
 }

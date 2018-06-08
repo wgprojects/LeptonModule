@@ -91,6 +91,12 @@ static void grab_frame() {
         row = i / PACKET_SIZE_UINT16;
     }
 
+    float hist[width];
+	for (int i = 0; i < width; i++)
+	{
+		hist[i] = 0;
+	}
+	
     float diff = maxValue - minValue;
     float scale = 255 / diff;
     for (int i = 0; i < FRAME_SIZE_UINT16; i++) {
@@ -102,12 +108,45 @@ static void grab_frame() {
         column = (i % PACKET_SIZE_UINT16) - 2;
         row = i / PACKET_SIZE_UINT16;
 
+
+		int bin = (int)((frameBuffer[i] - minValue) * width / diff);
+		hist[bin]++;
+
         // Set video buffer pixel to scaled colormap value
         int idx = row * width * 3 + column * 3;
         vidsendbuf[idx + 0] = colormap[3 * value];
         vidsendbuf[idx + 1] = colormap[3 * value + 1];
         vidsendbuf[idx + 2] = colormap[3 * value + 2];
     }
+
+	float maxBinCount = 0;
+	for (int i = 0; i < width; i++)
+	{
+		if(hist[i] > maxBinCount)
+		{
+			maxBinCount = hist[i];
+		}
+	}
+
+	for (int i = 0; i < width; i++)
+	{
+		int edge = hist[i] / maxBinCount * (height-5);
+		for (int bh = 0; bh < height; bh++)
+		{
+			row = height * 2 - bh - 1;
+			column = i;
+
+			int idx = row * width * 3 + column * 3;
+
+			int pix = 255;
+			if(bh >= edge)
+				pix = 0;
+
+			vidsendbuf[idx + 0] = pix; 
+			vidsendbuf[idx + 1] = pix;
+			vidsendbuf[idx + 2] = pix;
+		}
+	}
 
     /*
     struct timespec ts;
@@ -136,9 +175,9 @@ static void open_vpipe()
     if( t < 0 )
         exit(t);
     v.fmt.pix.width = width;
-    v.fmt.pix.height = height;
+    v.fmt.pix.height = height*2;
     v.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
-    vidsendsiz = width * height * 3;
+    vidsendsiz = width * height * 2 * 3;
     v.fmt.pix.sizeimage = vidsendsiz;
     t = ioctl(v4l2sink, VIDIOC_S_FMT, &v);
     if( t < 0 )

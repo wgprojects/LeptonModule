@@ -26,7 +26,7 @@
 #define PACKET_SIZE_UINT16 (PACKET_SIZE/2)
 #define PACKETS_PER_FRAME 60
 #define FRAME_SIZE_UINT16 (PACKET_SIZE_UINT16*PACKETS_PER_FRAME)
-#define FPS 27;
+#define FPS 9;
 
 static char const *v4l2dev = "/dev/video1";
 static char *spidev = NULL;
@@ -210,7 +210,7 @@ static void grab_frame() {
 
     frameBuffer = (uint16_t *)result;
     int row, column;
-    uint16_t value;
+    int32_t value;
     uint16_t minValue = 65535;
     uint16_t maxValue = 0;
 
@@ -240,8 +240,8 @@ static void grab_frame() {
 
 
 	//Fixed-temperature scaling range
-	minValue = 8000;
-	maxValue = 8600;
+	minValue = 8100;
+	maxValue = 8400;
 
 	float avgBody = 0;
 	int nBody = 0;
@@ -256,12 +256,16 @@ static void grab_frame() {
 	
     float diff = maxValue - minValue;
     float scale = 255 / diff;
+    const int *colormap = colormap_rainbow;
+    //const int *colormap = colormap_ironblack;
     for (int i = 0; i < FRAME_SIZE_UINT16; i++) {
         if (i % PACKET_SIZE_UINT16 < 2) {
             continue;
         }
         value = (frameBuffer[i] - minValue) * scale;
-        const int *colormap = colormap_ironblack;
+		if(value < 0) value = 0;
+		if(value > 255) value = 255;
+
         column = (i % PACKET_SIZE_UINT16) - 2;
         row = i / PACKET_SIZE_UINT16;
 
@@ -286,7 +290,21 @@ static void grab_frame() {
         vidsendbuf[idx + 0] = colormap[3 * value];
         vidsendbuf[idx + 1] = colormap[3 * value + 1];
         vidsendbuf[idx + 2] = colormap[3 * value + 2];
+
     }
+
+	for (int i = 0; i < width; i++)
+	{
+		for (int j = height; j < height+3; j++)
+		{
+			int value = (int)((i / (float)width) * 255);
+        	int idx = j * width * 3 + i * 3;
+	        vidsendbuf[idx + 0] = colormap[3 * value];
+	        vidsendbuf[idx + 1] = colormap[3 * value + 1];
+    	    vidsendbuf[idx + 2] = colormap[3 * value + 2];
+		
+		}
+	}
 
 	float maxBinCount = 0;
 	for (int i = 0; i < width; i++)
@@ -297,10 +315,11 @@ static void grab_frame() {
 		}
 	}
 
+	int heightMinueHist = 5;
 	for (int i = 0; i < width; i++)
 	{
-		int edge = hist[i] / maxBinCount * (height-5);
-		for (int bh = 0; bh < height; bh++)
+		int edge = hist[i] / maxBinCount * (height-heightMinueHist );
+		for (int bh = 0; bh < height - heightMinueHist ; bh++)
 		{
 			row = height * 2 - bh - 1;
 			column = i;
@@ -314,6 +333,7 @@ static void grab_frame() {
 			vidsendbuf[idx + 0] = pix; 
 			vidsendbuf[idx + 1] = pix;
 			vidsendbuf[idx + 2] = pix;
+
 		}
 	}
 

@@ -26,13 +26,14 @@
 #define PACKET_SIZE_UINT16 (PACKET_SIZE/2)
 #define PACKETS_PER_FRAME 60
 #define FRAME_SIZE_UINT16 (PACKET_SIZE_UINT16*PACKETS_PER_FRAME)
-#define FPS 9;
+#define FPS 2;
 
 static char const *v4l2dev = "/dev/video1";
 static char *spidev = NULL;
 static int v4l2sink = -1;
-static int width = 80;                //640;    // Default for Flash
-static int height = 60;        //480;    // Default for Flash
+static int sf = 1;
+static int width = sf*80;
+static int height = sf*60;
 static char *vidsendbuf = NULL;
 static int vidsendsiz = 0;
 
@@ -45,7 +46,11 @@ static void init_device() {
 }
 
 
-static void draw_char(int R, int C, char c)
+#define COLORBAR_HEIGHT 20
+#define HISTOGRAM_HEIGHT 0
+#define TEXT_HEIGHT 0
+
+static void draw_char(int start_height, int R, int C, char c)
 {
 	
 	int	fontdata[95][7] = {
@@ -146,6 +151,7 @@ static void draw_char(int R, int C, char c)
     {  0,   4,   2,  31,   2,   4,   0, }, // {94} '~'
 	};
 
+	int total_height = start_height + TEXT_HEIGHT;
 	int idx = c - ' ';
 	if(idx < 0 || idx > 95)
 	{
@@ -161,15 +167,17 @@ static void draw_char(int R, int C, char c)
 			if((1<<(4-i)) & fontline)
 				pix = 255;
 
-			int row = height * 2 + 3 + R * 10 + j;
+			int row = start_height + 3 + R * 10 + j;
 			int column = 5 + C * 7 + i;
 
-			int idx = row * width * 3 + column * 3;
+			if(row < total_height && column < width)
+			{
+				int idx = row * width * 3 + column * 3;
 
-			vidsendbuf[idx + 0] = pix; 
-			vidsendbuf[idx + 1] = pix;
-			vidsendbuf[idx + 2] = pix;
-	
+	//			vidsendbuf[idx + 0] = pix; 
+	//			vidsendbuf[idx + 1] = pix;
+//				vidsendbuf[idx + 2] = pix;
+			}
 		}
 	}
 	
@@ -177,11 +185,11 @@ static void draw_char(int R, int C, char c)
 
 
 }
-static void draw_string(int R, int C, char * c)
+static void draw_string(int start_height, int R, int C, char * c)
 {
 	while(*c != 0)
 	{
-		draw_char(R, C, *c);
+//		draw_char(start_height, R, C, *c);
 		C++;
 		c++;
 	}
@@ -236,7 +244,6 @@ static void grab_frame() {
 
 	char buf[20];
 	sprintf(buf, "%4d %4d", minValue, maxValue);
-	draw_string(1, 0, buf);
 
 
 	//Fixed-temperature scaling range
@@ -253,6 +260,8 @@ static void grab_frame() {
 	{
 		hist[i] = 0;
 	}
+
+
 	
     float diff = maxValue - minValue;
     float scale = 255 / diff;
@@ -283,29 +292,37 @@ static void grab_frame() {
 
 
 		int bin = (int)((frameBuffer[i] - minValue) * width / diff);
-		hist[bin]++;
+		//hist[bin]++;
 
         // Set video buffer pixel to scaled colormap value
-        int idx = row * width * 3 + column * 3;
+        int idx = row * width * 3 + column * 3; 
         vidsendbuf[idx + 0] = colormap[3 * value];
         vidsendbuf[idx + 1] = colormap[3 * value + 1];
         vidsendbuf[idx + 2] = colormap[3 * value + 2];
 
     }
 
+
+	int startHeight = height;
+
+	int draw_colorbar = 1;
+	if(draw_colorbar)
+	{
 	for (int i = 0; i < width; i++)
 	{
-		for (int j = height; j < height+3; j++)
+		int value = (int)((i / (float)width) * 255);
+		for (int j = 0; j < COLORBAR_HEIGHT; j++)
 		{
-			int value = (int)((i / (float)width) * 255);
-        	int idx = j * width * 3 + i * 3;
+        	int idx = (j+startHeight) * width * 3 + i * 3;
 	        vidsendbuf[idx + 0] = colormap[3 * value];
 	        vidsendbuf[idx + 1] = colormap[3 * value + 1];
     	    vidsendbuf[idx + 2] = colormap[3 * value + 2];
 		
 		}
 	}
-
+	startHeight += COLORBAR_HEIGHT;
+	}
+/*
 	float maxBinCount = 0;
 	for (int i = 0; i < width; i++)
 	{
@@ -315,13 +332,15 @@ static void grab_frame() {
 		}
 	}
 
-	int heightMinueHist = 5;
+	int draw_histogram = 0;
+	if(draw_histogram)
+	{
 	for (int i = 0; i < width; i++)
 	{
-		int edge = hist[i] / maxBinCount * (height-heightMinueHist );
-		for (int bh = 0; bh < height - heightMinueHist ; bh++)
+		int edge = hist[i] / maxBinCount * HISTOGRAM_HEIGHT;
+		for (int bh = 0; bh < HISTOGRAM_HEIGHT ; bh++)
 		{
-			row = height * 2 - bh - 1;
+			row = startHeight + HISTOGRAM_HEIGHT  - bh - 1;
 			column = i;
 
 			int idx = row * width * 3 + column * 3;
@@ -335,6 +354,8 @@ static void grab_frame() {
 			vidsendbuf[idx + 2] = pix;
 
 		}
+	}	
+	startHeight += HISTOGRAM_HEIGHT;
 	}
 
 	if(nBody > 0)
@@ -342,13 +363,13 @@ static void grab_frame() {
 	if(nBg > 0)
 		avgBg /= nBg;
 
-	sprintf(buf, "%4d %d", nBg, (int) avgBg);
-	draw_string(2, 0, buf);
-	sprintf(buf, "%4d %d", nBody, (int)avgBody);
-	draw_string(3, 0, buf);
+	draw_string(startHeight, 1, 0, buf);
 
-//	sprintf(buf, "%d", (int)maxBinCount);
-//	draw_string(3, 0, buf);
+	sprintf(buf, "%4d %d", nBg, (int) avgBg);
+	draw_string(startHeight, 2, 0, buf);
+	sprintf(buf, "%4d %d", nBody, (int)avgBody);
+	draw_string(startHeight, 3, 0, buf);
+*/
     /*
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -376,9 +397,10 @@ static void open_vpipe()
     if( t < 0 )
         exit(t);
     v.fmt.pix.width = width;
-    v.fmt.pix.height = height*3;
+    v.fmt.pix.height = height + COLORBAR_HEIGHT + HISTOGRAM_HEIGHT + TEXT_HEIGHT;
     v.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
-    vidsendsiz = width * height * 3 * 3;
+
+    vidsendsiz = width * (height + COLORBAR_HEIGHT + HISTOGRAM_HEIGHT + TEXT_HEIGHT)  * 3;
     v.fmt.pix.sizeimage = vidsendsiz;
     t = ioctl(v4l2sink, VIDIOC_S_FMT, &v);
     if( t < 0 )
@@ -459,7 +481,6 @@ int main(int argc, char **argv)
     }
 
     open_vpipe();
-
     // open and lock response
     if (sem_init(&lock2, 0, 1) == -1)
         exit(-1);
@@ -474,7 +495,9 @@ int main(int argc, char **argv)
         fprintf( stderr, "Waiting for sink\n" );
         sem_wait(&lock2);
         // setup source
+printf("trySPI");
         init_device(); // open and setup SPI
+printf("SPI");
         for (;;) {
             grab_frame();
             // push it out

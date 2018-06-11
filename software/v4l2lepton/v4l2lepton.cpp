@@ -46,8 +46,8 @@ static void init_device() {
 }
 
 
-#define COLORBAR_HEIGHT 20
-#define HISTOGRAM_HEIGHT 0
+#define COLORBAR_HEIGHT 5
+#define HISTOGRAM_HEIGHT 30
 #define TEXT_HEIGHT 0
 
 static void draw_char(int start_height, int R, int C, char c)
@@ -248,7 +248,14 @@ static void grab_frame() {
 
 	//Fixed-temperature scaling range
 	minValue = 8100;
-	maxValue = 8400;
+	maxValue = 8500;
+
+	int hminValue = 8300;
+	int hmaxValue = 8500;
+
+
+	if(hminValue < minValue) hminValue = minValue;
+	if(hmaxValue > maxValue) hmaxValue = maxValue;
 
 	float avgBody = 0;
 	int nBody = 0;
@@ -262,8 +269,7 @@ static void grab_frame() {
 	}
 
 
-	
-    float diff = maxValue - minValue;
+	float diff = (maxValue - minValue);	
     float scale = 255 / diff;
     const int *colormap = colormap_rainbow;
     //const int *colormap = colormap_ironblack;
@@ -291,8 +297,11 @@ static void grab_frame() {
 		}
 
 
-		int bin = (int)((frameBuffer[i] - minValue) * width / diff);
-		//hist[bin]++;
+		int bin = (int)((frameBuffer[i] - hminValue) * width / (hmaxValue - hminValue));
+		if(bin >= 0 && bin < width)
+		{
+			hist[bin]++;
+		}
 
         // Set video buffer pixel to scaled colormap value
         int idx = row * width * 3 + column * 3; 
@@ -322,7 +331,7 @@ static void grab_frame() {
 	}
 	startHeight += COLORBAR_HEIGHT;
 	}
-/*
+
 	float maxBinCount = 0;
 	for (int i = 0; i < width; i++)
 	{
@@ -332,7 +341,7 @@ static void grab_frame() {
 		}
 	}
 
-	int draw_histogram = 0;
+	int draw_histogram = 1;
 	if(draw_histogram)
 	{
 	for (int i = 0; i < width; i++)
@@ -348,10 +357,30 @@ static void grab_frame() {
 			int pix = 255;
 			if(bh >= edge)
 				pix = 0;
-
+#if COLORMAP_WHITE
 			vidsendbuf[idx + 0] = pix; 
 			vidsendbuf[idx + 1] = pix;
 			vidsendbuf[idx + 2] = pix;
+#else
+			if(pix == 0)
+			{
+				vidsendbuf[idx + 0] = pix; 
+				vidsendbuf[idx + 1] = pix;
+				vidsendbuf[idx + 2] = pix;
+			}
+			else
+			{
+				float fpix = i / (float)width;
+				float hb = (hminValue-minValue) / (float)(maxValue - minValue);
+				float hs = (hmaxValue - hminValue) / (float)(maxValue - minValue);
+				fpix = fpix * hs + hb;
+
+				pix = (int)(fpix * 255);
+	        	vidsendbuf[idx + 0] = colormap[3 * pix];
+	        	vidsendbuf[idx + 1] = colormap[3 * pix + 1];
+    	    	vidsendbuf[idx + 2] = colormap[3 * pix + 2];
+			}
+#endif
 
 		}
 	}	
@@ -369,7 +398,7 @@ static void grab_frame() {
 	draw_string(startHeight, 2, 0, buf);
 	sprintf(buf, "%4d %d", nBody, (int)avgBody);
 	draw_string(startHeight, 3, 0, buf);
-*/
+
     /*
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);

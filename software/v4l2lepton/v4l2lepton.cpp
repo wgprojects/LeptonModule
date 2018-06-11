@@ -48,7 +48,7 @@ static void init_device() {
 
 #define COLORBAR_HEIGHT 5
 #define HISTOGRAM_HEIGHT 30
-#define TEXT_HEIGHT 0
+#define TEXT_HEIGHT 40
 
 static void draw_char(int start_height, int R, int C, char c)
 {
@@ -167,16 +167,16 @@ static void draw_char(int start_height, int R, int C, char c)
 			if((1<<(4-i)) & fontline)
 				pix = 255;
 
-			int row = start_height + 3 + R * 10 + j;
+			int row = start_height + 1 + (R-1) * 10 + j;
 			int column = 5 + C * 7 + i;
 
 			if(row < total_height && column < width)
 			{
 				int idx = row * width * 3 + column * 3;
 
-	//			vidsendbuf[idx + 0] = pix; 
-	//			vidsendbuf[idx + 1] = pix;
-//				vidsendbuf[idx + 2] = pix;
+				vidsendbuf[idx + 0] = pix; 
+				vidsendbuf[idx + 1] = pix;
+				vidsendbuf[idx + 2] = pix;
 			}
 		}
 	}
@@ -189,7 +189,7 @@ static void draw_string(int start_height, int R, int C, char * c)
 {
 	while(*c != 0)
 	{
-//		draw_char(start_height, R, C, *c);
+		draw_char(start_height, R, C, *c);
 		C++;
 		c++;
 	}

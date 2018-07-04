@@ -28,10 +28,10 @@
 #define FRAME_SIZE_UINT16 (PACKET_SIZE_UINT16*PACKETS_PER_FRAME)
 #define FPS 2;
 
-static char const *v4l2dev = "/dev/video1";
+static char const *v4l2dev = "/dev/video0";
 static char *spidev = NULL;
 static int v4l2sink = -1;
-static int sf = 1;
+static int sf = 8;
 static int width = sf*80;
 static int height = sf*60;
 static char *vidsendbuf = NULL;
@@ -212,8 +212,8 @@ static void grab_frame() {
             }
         }
     }
-    if (resets >= 30) {
-        fprintf( stderr, "done reading, resets: \n" );
+    if (resets >= 40) {
+        fprintf( stderr, "done reading, resets: %d\n", resets );
     }
 
     frameBuffer = (uint16_t *)result;
@@ -242,20 +242,31 @@ static void grab_frame() {
         row = i / PACKET_SIZE_UINT16;
     }
 
-	char buf[20];
-	sprintf(buf, "%4d %4d", minValue, maxValue);
+	static char buf[80];
+	int measuredMin = minValue;
+	int measuredMax = maxValue;
 
 
 	//Fixed-temperature scaling range
-	minValue = 8100;
-	maxValue = 8500;
+	//minValue = 8100;
+	//maxValue = 8500;
 
-	int hminValue = 8300;
-	int hmaxValue = 8500;
+	int hminValue, hmaxValue;
+	//hminValue = 8300;
+	//hmaxValue = 8500;
+
+	hminValue = 0;
+	hmaxValue = 99999;
+
+	int bodyMin = 8300;
+	int bodyMax = 8600;
 
 
+	if(minValue >= maxValue) maxValue = minValue + 1; 
 	if(hminValue < minValue) hminValue = minValue;
 	if(hmaxValue > maxValue) hmaxValue = maxValue;
+
+	sprintf(buf, "Coolest/Minimum/Maximum/Hottest = %4d/%4d/%4d/%4d", measuredMin, measuredMax, minValue, maxValue);
 
 	float avgBody = 0;
 	int nBody = 0;
@@ -285,7 +296,7 @@ static void grab_frame() {
         row = i / PACKET_SIZE_UINT16;
 
 		int val = frameBuffer[i];
-		if(val > 8300 && val < 8600)
+		if(val > bodyMin && val < bodyMax)
 		{
 			avgBody += val;
 			nBody++;
@@ -303,12 +314,16 @@ static void grab_frame() {
 			hist[bin]++;
 		}
 
-        // Set video buffer pixel to scaled colormap value
-        int idx = row * width * 3 + column * 3; 
-        vidsendbuf[idx + 0] = colormap[3 * value];
-        vidsendbuf[idx + 1] = colormap[3 * value + 1];
-        vidsendbuf[idx + 2] = colormap[3 * value + 2];
 
+		for(int i=0; i<sf; i++)
+		for(int j=0; j<sf; j++)
+		{
+        	// Set video buffer pixel to scaled colormap value
+        	int idx = (j+sf*row) * width * 3 + (i+sf*column) * 3; 
+        	vidsendbuf[idx + 0] = colormap[3 * value];
+        	vidsendbuf[idx + 1] = colormap[3 * value + 1];
+        	vidsendbuf[idx + 2] = colormap[3 * value + 2];
+		}
     }
 
 
@@ -344,6 +359,7 @@ static void grab_frame() {
 	int draw_histogram = 1;
 	if(draw_histogram)
 	{
+
 	for (int i = 0; i < width; i++)
 	{
 		int edge = hist[i] / maxBinCount * HISTOGRAM_HEIGHT;
@@ -394,9 +410,9 @@ static void grab_frame() {
 
 	draw_string(startHeight, 1, 0, buf);
 
-	sprintf(buf, "%4d %d", nBg, (int) avgBg);
+	sprintf(buf, "Background Temp:       %4d@%4d", nBg, (int) avgBg);
 	draw_string(startHeight, 2, 0, buf);
-	sprintf(buf, "%4d %d", nBody, (int)avgBody);
+	sprintf(buf, "\"Body\" Temp (%4d-%4d): %4d@%4d", bodyMin, bodyMax, nBody, (int)avgBody);
 	draw_string(startHeight, 3, 0, buf);
 
     /*
@@ -426,10 +442,14 @@ static void open_vpipe()
     if( t < 0 )
         exit(t);
     v.fmt.pix.width = width;
-    v.fmt.pix.height = height + COLORBAR_HEIGHT + HISTOGRAM_HEIGHT + TEXT_HEIGHT;
+	
+    int total_height = height + COLORBAR_HEIGHT + HISTOGRAM_HEIGHT + TEXT_HEIGHT;
+    total_height += 8 - total_height % 8; //Must be divisible by 8 - expand if needed;
+
+    v.fmt.pix.height = total_height;
     v.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
 
-    vidsendsiz = width * (height + COLORBAR_HEIGHT + HISTOGRAM_HEIGHT + TEXT_HEIGHT)  * 3;
+    vidsendsiz = width * total_height  * 3;
     v.fmt.pix.sizeimage = vidsendsiz;
     t = ioctl(v4l2sink, VIDIOC_S_FMT, &v);
     if( t < 0 )

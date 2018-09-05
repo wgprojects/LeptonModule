@@ -20,7 +20,12 @@
 
 #include "Palettes.h"
 #include "SPI.h"
+
+#include "LEPTON_ErrorCodes.h"
 #include "Lepton_I2C.h"
+#include "LEPTON_SYS.h"
+#include "LEPTON_SDK.h"
+#include "LEPTON_OEM.h"
 
 #define PACKET_SIZE 164
 #define PACKET_SIZE_UINT16 (PACKET_SIZE/2)
@@ -195,6 +200,29 @@ static void draw_string(int start_height, int R, int C, char * c)
 	}
 }
 
+static int sequentialFailures = 0;
+LEP_CAMERA_PORT_DESC_T port;
+
+static void reset_lepton()
+{
+    static bool connected_i2c = false;
+    if(!connected_i2c)
+    {
+	connected_i2c = true;
+	LEP_OpenPort(1, LEP_CCI_TWI, 400, &port);
+    }
+    LEP_RESULT r = LEP_RunOemReboot(&port);
+
+    if(LEP_OK == r)
+    {
+	printf("Rebooted Lepton.\n");
+    }
+    else
+    {
+	printf("RunOemReboot FAILED\n");
+    }
+}
+
 static void grab_frame() {
 
     resets = 0;
@@ -206,6 +234,8 @@ static void grab_frame() {
             resets += 1;
             usleep(1000);
             if (resets == 750) {
+		resets = 0;
+		sequentialFailures++;
                 SpiClosePort();
                 usleep(750000);
                 SpiOpenPort(spidev);
@@ -214,6 +244,16 @@ static void grab_frame() {
     }
     if (resets >= 40) {
         fprintf( stderr, "done reading, resets: %d\n", resets );
+    }
+    else if(resets < 20)
+    {
+	sequentialFailures = 0;
+    }
+
+
+    if(sequentialFailures > 20)
+    {
+	reset_lepton();
     }
 
     frameBuffer = (uint16_t *)result;
@@ -255,18 +295,27 @@ static void grab_frame() {
 	//hminValue = 8300;
 	//hmaxValue = 8500;
 
-	hminValue = 0;
-	hmaxValue = 99999;
 
 	int bodyMin = 8300;
 	int bodyMax = 8600;
 
 
 	if(minValue >= maxValue) maxValue = minValue + 1; 
+	
+	int delta = maxValue - minValue;
+	if(delta < 400)
+	{
+		minValue -= (400 - delta)/2;
+		maxValue += (400 - delta)/2;
+	}
+
+	hminValue = (minValue + maxValue) / 2;
+	hmaxValue = 99999;
+
 	if(hminValue < minValue) hminValue = minValue;
 	if(hmaxValue > maxValue) hmaxValue = maxValue;
 
-	sprintf(buf, "Coolest/Minimum/Maximum/Hottest = %4d/%4d/%4d/%4d", measuredMin, measuredMax, minValue, maxValue);
+	sprintf(buf, "Coolest/Minimum/Maximum/Hottest = %4d/%4d/%4d/%4d", measuredMin, minValue, maxValue, measuredMax);
 
 	float avgBody = 0;
 	int nBody = 0;
